@@ -143,7 +143,6 @@ func (jsk *jdSecKill) PostReq(reqUrl string, params url.Values, referer string, 
 
 	logs.PrintlnSuccess("Post请求连接", req.URL)
 	logs.PrintlnInfo("=======================")
-	logs.PrintlnInfo("resp body:", string(b))
 	r := FormatJdResponse(b, req.URL.String(), false)
 	if r.Raw == "null" || r.Raw == "" {
 		return gjson.Result{}, errors.New("获取数据失败：" + r.Raw)
@@ -205,6 +204,15 @@ func (jsk *jdSecKill) Run() error {
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			logs.PrintlnInfo("等待登陆......")
 			for {
+				select {
+					case <-jsk.ctx.Done():
+						logs.PrintErr("浏览器被关闭，退出进程")
+						return nil
+					case <-jsk.bCtx.Done():
+						logs.PrintErr("浏览器被关闭，退出进程")
+						return nil
+					default:
+				}
 				if jsk.isLogin {
 					logs.PrintlnSuccess(jsk.UserInfo.Get("realName").String() + ", 登陆成功........")
 					break
@@ -219,6 +227,8 @@ func (jsk *jdSecKill) Run() error {
 			for _, v := range jsk.bWorksCtx {
 				go func(ctx2 context.Context) {
 					jsk.FetchSecKillUrl()
+					logs.PrintlnInfo("正在访问抢购连接......")
+					_, _, _, _  = page.Navigate(jsk.SecKillUrl).WithReferrer("https://item.jd.com/"+jsk.SkuId+".html").Do(ctx2)
 					SecKillRE:
 					//请求抢购连接，提交订单
 					err := jsk.ReqSubmitSecKillOrder(ctx2)
@@ -264,6 +274,15 @@ func (jsk *jdSecKill) WaitStart() chromedp.ActionFunc {
 		st := jsk.StartTime.UnixNano() / 1e6
 		logs.PrintlnInfo("等待时间到达"+jsk.StartTime.Format(global.DateTimeFormatStr)+"...... 请勿关闭浏览器")
 		for {
+			select {
+			case <-jsk.ctx.Done():
+				logs.PrintErr("浏览器被关闭，退出进程")
+				return nil
+			case <-jsk.bCtx.Done():
+				logs.PrintErr("浏览器被关闭，退出进程")
+				return nil
+			default:
+			}
 			if global.UnixMilli() - jsk.DiffTime >= st {
 				logs.PrintlnInfo("时间到达。。。。开始执行")
 				break
@@ -349,8 +368,6 @@ func (jsk *jdSecKill) ReqSubmitSecKillOrder(ctx context.Context) error {
 		ctx = jsk.bCtx
 	}
 	//这里直接使用浏览器跳转 主要目的是获取cookie
-	logs.PrintlnInfo("正在访问抢购连接......")
-	_, _, _, _  = page.Navigate(jsk.SecKillUrl).WithReferrer("https://item.jd.com/"+jsk.SkuId+".html").Do(ctx)
 	skUrl := fmt.Sprintf("https://marathon.jd.com/seckill/seckill.action?=skuId=%s&num=%d&rid=%d", jsk.SkuId, jsk.SecKillNum, time.Now().Unix())
 	logs.PrintlnInfo("访问抢购订单结算页面......", skUrl)
 	_, _, _, _ = page.Navigate(skUrl).WithReferrer("https://item.jd.com/"+jsk.SkuId+".html").Do(ctx)
@@ -380,7 +397,10 @@ func (jsk *jdSecKill) ReqSubmitSecKillOrder(ctx context.Context) error {
 		jsk.IsOkChan <- struct{}{}
 		logs.PrintlnInfo("抢购成功，订单编号:", r.Get("orderId").String())
 	} else {
-		return errors.New("抢购失败：" + r.Raw)
+		if r.IsObject() || r.IsArray() {
+			return errors.New("抢购失败：" + r.Raw)
+		}
+		return errors.New("抢购失败,再接再厉")
 	}
 	return nil
 }
