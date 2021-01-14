@@ -19,6 +19,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,6 +48,7 @@ type jdSecKill struct {
 	IsOk        bool
 	StartTime   time.Time
 	DiffTime    int64
+	PayPwd string
 }
 
 func NewJdSecKill(execPath string, skuId string, num, works int) *jdSecKill {
@@ -133,7 +135,12 @@ func (jsk *jdSecKill) GetReq(reqUrl string, params map[string]string, referer st
 }
 
 func (jsk *jdSecKill) SyncJdTime() {
-	resp, _ := http.Get("https://a.jd.com//ajax/queryServerData.html")
+	resp, err := http.Get("https://a.jd.com/ajax/queryServerData.html")
+	if err != nil {
+		logs.PrintErr(err)
+		os.Exit(0)
+		return
+	}
 	defer resp.Body.Close()
 	b, _ := ioutil.ReadAll(resp.Body)
 	r := gjson.ParseBytes(b)
@@ -497,7 +504,7 @@ func (jsk *jdSecKill) GetOrderReqData() url.Values {
 		"invoicePhone":       []string{invoiceInfo.Get("invoicePhone").String()},
 		"invoicePhoneKey":    []string{invoiceInfo.Get("invoicePhoneKey").String()},
 		"invoice":            []string{"true"},
-		"password":           []string{""},
+		"password":           []string{jsk.PayPwd},
 		"codTimeType":        []string{"3"},
 		"paymentType":        []string{"4"},
 		"areaCode":           []string{""},
